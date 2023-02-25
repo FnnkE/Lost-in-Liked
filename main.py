@@ -8,6 +8,7 @@ load_dotenv()
 
 clientID = os.getenv("CLIENT_ID")
 clientSecret = os.getenv("CLIENT_SECRET")
+TOKEN = ''
 
 def getToken():
     authString = clientID + ":" + clientSecret
@@ -29,17 +30,20 @@ def getAuthHeader(token):
     return {"Authorization": "Bearer " + token}
 
 def getPlaylists(token):
-    url="https://api.spotify.com/v1/users/nerd-e/playlists"
-    headers=getAuthHeader(token)
-    
-    queryURL = url
-    
-    result = get(queryURL, headers=headers)
-    jsonResult = json.loads(result.content)["items"]
-    if len(jsonResult )== 0:
-        print("No playlists found...")
-        return None
-    return jsonResult
+    flag = True
+    playlists = []
+    offset = 0
+    while flag:
+        url=f"https://api.spotify.com/v1/users/nerd-e/playlists?limit=50&offset={offset}"
+        headers=getAuthHeader(TOKEN)
+        result = get(url, headers=headers)
+        jsonResult = json.loads(result.content)["items"]
+        if (len(jsonResult)!=50):
+            flag = False
+        offset += 50
+        playlists.extend(jsonResult)
+        print("Getting playlists: ", offset)
+    return playlists
 
 def getPlaylistSongs(token, playlistID):
     flag = True
@@ -47,7 +51,7 @@ def getPlaylistSongs(token, playlistID):
     offset = 0
     while flag:
         url = f"https://api.spotify.com/v1/playlists/{playlistID}/tracks?offset={offset}"
-        headers = getAuthHeader(token)
+        headers = getAuthHeader(TOKEN)
         result = get(url, headers=headers)
         jsonResult = json.loads(result.content)["items"]
         if (len(jsonResult)!=100):
@@ -59,12 +63,12 @@ def getPlaylistSongs(token, playlistID):
 def createPlaylist():
     url = "https://api.spotify.com/v1/users/nerd-e/playlists"
     headers = {
-        "Authorization": "Bearer TOKEN",
+        "Authorization": "Bearer " + TOKEN,
         "Content-Type": "application/json"
         }
     data = {
-        "name": "Python 01",
-        "description": "All Songs in my Public Playlists",
+        "name": "Lost in Liked™",
+        "description": "some cheesy quote about being lost | github link",
         "public": "true"
         }
     result = post(url, headers=headers, data=json.dumps(data))
@@ -73,42 +77,82 @@ def createPlaylist():
 def addSongs(playlistID, uris):
     url = f"https://api.spotify.com/v1/playlists/{playlistID}/tracks?uris=" + uris
     headers = {
-        "Authorization": "Bearer TOKEN",
+        "Authorization": "Bearer " + TOKEN,
         "Content-Type": "application/json"
         }
     result = post(url, headers=headers)
-    print(result.content)
 
+def getLikedSongs():
+    flag = True
+    songs = []
+    offset = 0
+    while flag:
+        url=f"https://api.spotify.com/v1/me/tracks?limit=50&offset={offset}"
+        headers=getAuthHeader(TOKEN)
+        result = get(url, headers=headers)
+        jsonResult = json.loads(result.content)["items"]
+        if (len(jsonResult)!=50):
+            flag = False
+        offset += 50
+        songs.extend(jsonResult)
+        print("Getting Liked Songs: ", offset)
+    return songs
 
 token = getToken()
+liked = getLikedSongs()
+
+print('Getting Playlists...')
 result = getPlaylists(token)
+
 
 playlistMade = False
 for playlist in result:
-    if playlist["name"] == "Python 01":
+    if playlist["name"] == "Lost in Liked™":
         playlistMade = True
         newPlaylistID = playlist['id']
-
+        print(f'Found Playlist...{newPlaylistID}')
 if not playlistMade:
     newPlaylistID = createPlaylist()
+    print(f'Creating New Playlist... {newPlaylistID}')
+
 playlistIDs  = []
+likedURIs = []
 songURIs = []
 
+
 for idx, playlist in enumerate(result):
+    if idx%100 == 0:
+        print("Progress: ", idx)
     playlistIDs.append(playlist["id"])
     songs = getPlaylistSongs(token, playlist["id"])
+    print(f"Playlist {idx+1}...")
     for jdx, song in enumerate(songs):
-        newSong = song['track']['uri']
-        if newSong not in songURIs:
-            songURIs.append(newSong)
+        try:
+            newSong = song['track']['uri']
+            if newSong not in songURIs:
+                songURIs.append(newSong)
+        except:
+            print("something went wrong ----- continuing")
+
+print('URIs Obtained...')
+
+for idx, song in enumerate(liked):
+    if idx%100 == 0:
+        print("Progress: ", idx)
+    newSong = song['track']['uri']
+    if newSong not in songURIs:
+        likedURIs.append(newSong)
+
+print('Liked Songs Put in List...')
 
 uris = ""
-for idx, song in enumerate(songURIs):
+for idx, song in enumerate(likedURIs):
     if idx%100 == 0 and idx != 0:
         addSongs(newPlaylistID, uris)
         uris = ""
     uris += song
-    if (idx+1) != len(songURIs) and (idx+1)%100 != 0:
+    if (idx+1) != len(likedURIs) and (idx+1)%100 != 0:
         uris += ','
 
 addSongs(newPlaylistID, uris)
+print('DONE!')
