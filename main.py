@@ -50,28 +50,65 @@ def getPlaylistSongs(token, playlistID):
         headers = getAuthHeader(token)
         result = get(url, headers=headers)
         jsonResult = json.loads(result.content)["items"]
-        
         if (len(jsonResult)!=100):
             flag = False
         offset += 100
         songs.extend(jsonResult)
     return songs
 
+def createPlaylist():
+    url = "https://api.spotify.com/v1/users/nerd-e/playlists"
+    headers = {
+        "Authorization": "Bearer TOKEN",
+        "Content-Type": "application/json"
+        }
+    data = {
+        "name": "Python 01",
+        "description": "All Songs in my Public Playlists",
+        "public": "true"
+        }
+    result = post(url, headers=headers, data=json.dumps(data))
+    return json.loads(result.content)['id']
+
+def addSongs(playlistID, uris):
+    url = f"https://api.spotify.com/v1/playlists/{playlistID}/tracks?uris=" + uris
+    headers = {
+        "Authorization": "Bearer TOKEN",
+        "Content-Type": "application/json"
+        }
+    result = post(url, headers=headers)
+    print(result.content)
+
+
 token = getToken()
 result = getPlaylists(token)
+
+playlistMade = False
+for playlist in result:
+    if playlist["name"] == "Python 01":
+        playlistMade = True
+        newPlaylistID = playlist['id']
+
+if not playlistMade:
+    newPlaylistID = createPlaylist()
 playlistIDs  = []
-songIDS = []
+songURIs = []
 
 for idx, playlist in enumerate(result):
     playlistIDs.append(playlist["id"])
     songs = getPlaylistSongs(token, playlist["id"])
-    print(len(songs))
     for jdx, song in enumerate(songs):
-        newSong = song['track']['id']
-        print("newSong")
-        if newSong not in songIDS:
-            songIDS.append(newSong)
+        newSong = song['track']['uri']
+        if newSong not in songURIs:
+            songURIs.append(newSong)
 
+uris = ""
+for idx, song in enumerate(songURIs):
+    if idx%100 == 0 and idx != 0:
+        addSongs(newPlaylistID, uris)
+        uris = ""
+    uris += song
+    if (idx+1) != len(songURIs) and (idx+1)%100 != 0:
+        uris += ','
 
-print(songIDS)
-print(playlistIDs)
+addSongs(newPlaylistID, uris)
