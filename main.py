@@ -14,6 +14,8 @@ TOKEN = os.getenv("TOKEN")
 
 
 scope = "ugc-image-upload, user-read-playback-state, user-modify-playback-state, user-read-currently-playing, app-remote-control, streaming, playlist-read-private, playlist-read-collaborative, playlist-modify-private, playlist-modify-public, user-follow-modify, user-follow-read, user-read-playback-position, user-top-read, user-read-recently-played, user-library-modify, user-library-read, user-read-email, user-read-private"
+#Limit Scope
+
 auth_manager = SpotifyOAuth(client_id=clientID, client_secret=clientSecret, redirect_uri='http://lost-in-like.com', scope=scope)
 sp = spotipy.Spotify(auth_manager=auth_manager)
 
@@ -22,11 +24,11 @@ def getPlaylists():
     playlists = []
     offset = 0
     while flag:
-        playlists = sp.current_user_playlists(limit=50, offset=offset)
-        if (len(playlists)!=50):
+        newPlaylists = sp.current_user_playlists(limit=50, offset=offset)['items']
+        if (len(newPlaylists)!=50):
             flag = False
         offset += 50
-        playlists.extend(playlists) #limit output to only items?
+        playlists.extend(newPlaylists)
         print("Getting playlists: ", offset)
     return playlists
 
@@ -35,7 +37,7 @@ def getPlaylistSongs(playlistID):
     songs = []
     offset = 0
     while flag:
-        tracks = sp.playlist_tracks(playlistID, fields=None, limit=100, offset=offset, market=None, additional_types=('track', )) #type and market?
+        tracks = sp.playlist_tracks(playlistID, limit=100, offset=offset)['items']
         if (len(tracks)!=100):
             flag = False
         offset += 100
@@ -43,20 +45,17 @@ def getPlaylistSongs(playlistID):
     return songs
 
 def createPlaylist(username):
-    result = sp.user_playlist_create(username, '<TEST/> Lost in Liked', public=True, collaborative=False, description='Being lost is worth the being found | https://github.com/FnnkE/Lost-in-Liked')
-    #what does result output?
-    return result #json.loads(result.content)['id']
+    return sp.user_playlist_create(username, '<TEST/> Lost in Liked', public=True, collaborative=False, description='Being lost is worth the being found | https://github.com/FnnkE/Lost-in-Liked')['id']
 
 def addSongs(playlistID, uris):
-    result = sp.playlist_add_items(playlistID, uris, position=None) # None?
-    return result # Output?
+    sp.playlist_add_items(playlistID, uris)
 
-def getLikedSongs(token):
+def getLikedSongs():
     flag = True
     songs = []
     offset = 0
     while flag:
-        result = sp.current_user_saved_tracks(limit=50, offset=offset, market=None) #market?
+        result = sp.current_user_saved_tracks(limit=50, offset=offset)['items']
         if (len(result)!=50):
             flag = False
         offset += 50
@@ -64,44 +63,39 @@ def getLikedSongs(token):
         print("Getting Liked Songs: ", offset)
     return songs
 
-def removeSongs(playlistID, token, songs):
-    url = f"https://api.spotify.com/v1/playlists/{playlistID}/tracks"
-    headers = {
-        "Authorization": "Bearer " + token,
-        "Content-Type": "application/json"
-        }
-    data = '{"tracks":['
-    index = 1
-    for song in songs:
-        index += 1
-        data += '{"uri":"'+ song['track']['uri'] + '"},'
-        if index%100 == 0:
-            data = data[:-1] + "]}"
-            result = delete(url, headers=headers, data=data)
-            data = '{"tracks":['
-    data = data[:-1] + "]}"
-    result = delete(url, headers=headers, data=data)
-    return result
+def removeSongs(playlistID):
+    songs = getPlaylistSongs(playlistID=playlistID)
+    inRange = True
+    offset = 0
+    range = len(songs)
+    while inRange:
+        limit = offset + 50
+        if limit > range:
+            limit = range
+        sp.playlist_remove_all_occurrences_of_items(newPlaylistID, songs[offset:limit])
+        offset += 50
+        if offset > range:
+            inRange = False
+
 
 #Create user token
 username = 'nerd-e'
 
 #Get user data
-liked = getLikedSongs(token)
+liked = getLikedSongs()
 print('Getting Playlists...')
-result = getPlaylists(token, username)
+result = getPlaylists()
 
 #Playlist setup
 playlistMade = False
 for playlist in result:
-    if playlist["name"] == "</> Lost in Liked":
+    if playlist["name"] == "<TEST/> Lost in Liked":
         playlistMade = True
         newPlaylistID = playlist['id']
         print(f'Found Playlist...{newPlaylistID}')
-        llSongs = getPlaylistSongs(token, newPlaylistID)
-        print(removeSongs(newPlaylistID, token, llSongs))
+        removeSongs(newPlaylistID) #PROBLEM!
 if not playlistMade:
-    newPlaylistID = createPlaylist(token, username)
+    newPlaylistID = createPlaylist(username)
     print(f'Creating New Playlist... {newPlaylistID}')
 
 #Init vars
@@ -109,40 +103,36 @@ playlistIDs  = []
 likedURIs = []
 songURIs = []
 
-#Get lists of URIs of all songs in each playlists
-for idx, playlist in enumerate(result):
-    if idx%100 == 0:
-        print("Progress: ", idx)
-    playlistIDs.append(playlist["id"])
-    songs = getPlaylistSongs(token, playlist["id"])
-    print(f"Playlist {idx+1}...")
-    for jdx, song in enumerate(songs):
-        try:
-            newSong = song['track']['uri']
-            if newSong not in songURIs:
-                songURIs.append(newSong)
-        except:
-            print("something went wrong ----- continuing")
-print('URIs Obtained...')
-
 #Get list of URIs of all songs in users "Liked Songs"
 for idx, song in enumerate(liked):
     if idx%100 == 0:
         print("Progress: ", idx)
     newSong = song['track']['uri']
-    if newSong not in songURIs:
-        likedURIs.append(newSong)
+    likedURIs.append(newSong)
 print('Liked Songs Put in List...')
 
-#Add songs not in users "Liked Songs" into playlist
-uris = ""
-for idx, song in enumerate(likedURIs):
-    if idx%100 == 0 and idx != 0:
-        uris = uris[:-1]
-        addSongs(newPlaylistID, uris, token)
-        uris = ""
-    uris += song + ','
-uris = uris[:-1]
-addSongs(newPlaylistID, uris, token)
+#Get lists of URIs of all songs in each playlists
+for idx, playlist in enumerate(result):
+    print("Progress: ", idx, " - ", playlist['name'])
+    songs = getPlaylistSongs(playlist["id"])
+    newSongs = []
+    for idx, song in enumerate(songs):
+        newSong = song['track']['uri']
+        newSongs.append(newSong)
+    likedURIs = list(set(likedURIs) - set(newSongs))
+print('URIs Obtained...')
+
+#Liked URI - Playlist URI
+inRange = True
+offset = 0
+range = len(likedURIs)
+while inRange:
+    limit = offset + 100
+    if limit > range:
+        limit = range
+    addSongs(newPlaylistID, likedURIs[offset:limit])
+    offset += 100
+    if offset > range:
+        inRange = False
+
 print('DONE!')
-"""
