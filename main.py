@@ -1,8 +1,5 @@
 from dotenv import load_dotenv
 import os
-import base64
-from requests import post, get, delete
-import json
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
@@ -11,7 +8,6 @@ load_dotenv()
 clientID = os.getenv("CLIENT_ID")
 clientSecret = os.getenv("CLIENT_SECRET")
 TOKEN = os.getenv("TOKEN")
-
 
 scope = "ugc-image-upload, user-read-playback-state, user-modify-playback-state, user-read-currently-playing, app-remote-control, streaming, playlist-read-private, playlist-read-collaborative, playlist-modify-private, playlist-modify-public, user-follow-modify, user-follow-read, user-read-playback-position, user-top-read, user-read-recently-played, user-library-modify, user-library-read, user-read-email, user-read-private"
 #Limit Scope
@@ -45,7 +41,7 @@ def getPlaylistSongs(playlistID):
     return songs
 
 def createPlaylist(username):
-    return sp.user_playlist_create(username, '<TEST/> Lost in Liked', public=True, collaborative=False, description='Being lost is worth the being found | https://github.com/FnnkE/Lost-in-Liked')['id']
+    return sp.user_playlist_create(username, '</> Lost in Liked', public=True, collaborative=False, description='<LL/> Being lost is worth the being found | https://github.com/FnnkE/Lost-in-Liked')['id']
 
 def addSongs(playlistID, uris):
     sp.playlist_add_items(playlistID, uris)
@@ -65,23 +61,19 @@ def getLikedSongs():
 
 def removeSongs(playlistID):
     songs = getPlaylistSongs(playlistID=playlistID)
-    inRange = True
-    offset = 0
-    range = len(songs)
-    while inRange:
-        limit = offset + 50
-        if limit > range:
-            limit = range
-        sp.playlist_remove_all_occurrences_of_items(newPlaylistID, songs[offset:limit])
-        offset += 50
-        if offset > range:
-            inRange = False
-
-
-#Create user token
-username = 'nerd-e'
+    uris = []
+    for idx, song in enumerate(songs):
+        if idx%50 == 0 and idx != 0:
+            print("Progress: ", idx)
+            sp.playlist_remove_all_occurrences_of_items(playlistID, uris)
+            uris = []
+        newSong = song['track']['uri']
+        uris.append(newSong)
+    if len(uris) != 0:
+        sp.playlist_remove_all_occurrences_of_items(playlistID, uris)
 
 #Get user data
+username = sp.current_user()['id']
 liked = getLikedSongs()
 print('Getting Playlists...')
 result = getPlaylists()
@@ -89,21 +81,20 @@ result = getPlaylists()
 #Playlist setup
 playlistMade = False
 for playlist in result:
-    if playlist["name"] == "<TEST/> Lost in Liked":
+    if '&lt;LL&#x2F;&gt;' in playlist['description']:
         playlistMade = True
         newPlaylistID = playlist['id']
         print(f'Found Playlist...{newPlaylistID}')
-        removeSongs(newPlaylistID) #PROBLEM!
+        removeSongs(newPlaylistID)
 if not playlistMade:
     newPlaylistID = createPlaylist(username)
     print(f'Creating New Playlist... {newPlaylistID}')
 
-#Init vars
-playlistIDs  = []
+#Get list of URIs of all songs in users "Liked Songs"
 likedURIs = []
 songURIs = []
+llURIs = []
 
-#Get list of URIs of all songs in users "Liked Songs"
 for idx, song in enumerate(liked):
     if idx%100 == 0:
         print("Progress: ", idx)
@@ -115,22 +106,29 @@ print('Liked Songs Put in List...')
 for idx, playlist in enumerate(result):
     print("Progress: ", idx, " - ", playlist['name'])
     songs = getPlaylistSongs(playlist["id"])
-    newSongs = []
     for idx, song in enumerate(songs):
-        newSong = song['track']['uri']
-        newSongs.append(newSong)
-    likedURIs = list(set(likedURIs) - set(newSongs))
+        try:
+            newSong = song['track']['uri']
+            if newSong not in songURIs:
+                songURIs.append(newSong)
+        except:
+            print("something went wrong in getting uris... continuing")
 print('URIs Obtained...')
 
-#Liked URI - Playlist URI
+for i in likedURIs:
+    if i not in songURIs:
+        llURIs.append(i)
+
+#Add songs to the Lost in Liked playlist
 inRange = True
 offset = 0
-range = len(likedURIs)
+range = len(llURIs)
 while inRange:
     limit = offset + 100
     if limit > range:
         limit = range
-    addSongs(newPlaylistID, likedURIs[offset:limit])
+    addSongs(newPlaylistID, llURIs[offset:limit])
+    print("adding songs", offset, limit)
     offset += 100
     if offset > range:
         inRange = False
